@@ -304,3 +304,94 @@ export function renderPropsPanel(obj, A) {
 
   return wrap;
 }
+
+// ---------------------------------------------------------- выпадашки
+
+let openPop = null;
+
+/** Выпадающая панель под кнопкой. Модалок с блокирующим оверлеем нет
+ *  намеренно: на iPad они прыгают из-за клавиатуры. */
+export function popover(anchor, content) {
+  closePopover();
+  const host = document.querySelector('#menu-host');
+  const box = h('div', { class: 'pop', role: 'dialog' }, content);
+  host.append(box);
+
+  const r = anchor.getBoundingClientRect();
+  box.style.top = `${r.bottom + 6}px`;
+  // прижимаем к правому краю кнопки, но не даём вылезти за экран
+  const w = box.offsetWidth || 280;
+  box.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w))}px`;
+
+  const onDoc = (e) => { if (!box.contains(e.target) && e.target !== anchor) closePopover(); };
+  const onKey = (e) => { if (e.key === 'Escape') closePopover(); };
+  setTimeout(() => {
+    document.addEventListener('pointerdown', onDoc, true);
+    document.addEventListener('keydown', onKey);
+  }, 0);
+
+  openPop = () => {
+    document.removeEventListener('pointerdown', onDoc, true);
+    document.removeEventListener('keydown', onKey);
+    box.remove();
+    openPop = null;
+  };
+  return box;
+}
+
+export function closePopover() { if (openPop) openPop(); }
+
+export function menuList(items) {
+  return h('div', { class: 'menu' }, items.filter(Boolean).map((it) => (
+    it.sep
+      ? h('div', { class: 'menu-sep' })
+      : h('button', {
+          class: 'menu-item' + (it.danger ? ' is-danger' : ''), type: 'button',
+          ...(it.disabled ? { disabled: true } : {}),
+          onclick: () => { if (!it.keepOpen) closePopover(); it.onClick?.(); },
+        }, it.label)
+  )));
+}
+
+/** Меню вариантов: переключение, переименование по тапу, создание, удаление. */
+export function variantsMenu(store, A) {
+  const wrap = h('div', { class: 'menu' });
+
+  for (const v of store.variants) {
+    const active = v.id === store.activeId;
+    const row = h('div', { class: 'vrow' + (active ? ' is-active' : '') });
+
+    const nameBtn = h('button', { class: 'vname', type: 'button' }, v.scene.name);
+    nameBtn.addEventListener('click', () => {
+      if (!active) { closePopover(); A.switchVariant(v.id); return; }
+      // тап по имени активного варианта — правка на месте
+      const inp = h('input', { class: 'txt vedit', type: 'text', value: v.scene.name });
+      const done = () => { A.renameVariant(v.id, inp.value); closePopover(); };
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); done(); }
+        if (e.key === 'Escape') closePopover();
+      });
+      inp.addEventListener('blur', done);
+      nameBtn.replaceWith(inp);
+      inp.focus(); inp.select();
+    });
+
+    // DOM append превращает null в строку «null», в отличие от h() —
+    // поэтому галочку добавляем только когда она есть
+    row.append(nameBtn);
+    if (active) row.append(h('span', { class: 'vmark', text: '✓' }));
+    wrap.append(row);
+  }
+
+  wrap.append(h('div', { class: 'menu-sep' }));
+  wrap.append(menuList([
+    { label: '+ ' + S.newVariant, onClick: () => A.newVariant() },
+    { label: S.dupVariant, onClick: () => A.duplicateVariant() },
+  ]));
+
+  const del = confirmBtn(S.delVariant, { onConfirm: () => { closePopover(); A.deleteVariant(); } });
+  if (store.variants.length <= 1) del.disabled = true;
+  wrap.append(h('div', { class: 'menu-pad' }, del));
+
+  return wrap;
+}

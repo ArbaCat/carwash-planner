@@ -77,6 +77,8 @@ export const S = {
   renameVariant: 'Переименовать',
   delVariant: 'Удалить',
   variantA: 'Вариант A',
+  variantPrefix: 'Вариант',
+  copySuffix: 'копия',
 
   // тосты и ошибки
   errImportShape: 'Файл не похож на сцену carwash-planner',

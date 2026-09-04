@@ -370,3 +370,50 @@ input.num-cell { min-height: var(--tap); }
   box-shadow: inset 0 0 0 1px rgba(0,0,0,.25);
 }
 .swatch.is-on { border-color: #fff; }
+
+/* ---------- выпадашки ---------- */
+
+#menu-host { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+.pop {
+  position: absolute;
+  pointer-events: auto;
+  min-width: 240px; max-width: min(92vw, 340px);
+  max-height: 70vh; overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: rgba(30,35,41,.98);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 10px 34px rgba(0,0,0,.42);
+}
+
+.menu { display: flex; flex-direction: column; }
+.menu-item {
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 0; border-radius: 10px;
+  background: transparent; color: var(--fg);
+  font: inherit; text-align: left;
+  cursor: pointer;
+}
+.menu-item:active:not(:disabled) { background: rgba(255,255,255,.09); }
+.menu-item:disabled { opacity: .38; cursor: default; }
+.menu-item.is-danger { color: #ffb3b1; }
+.menu-sep { height: 1px; margin: 6px 4px; background: var(--line); }
+.menu-pad { padding: 0 4px 4px; }
+
+.vrow { display: flex; align-items: center; gap: 6px; }
+.vname {
+  flex: 1 1 auto;
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 0; border-radius: 10px;
+  background: transparent; color: var(--fg);
+  font: inherit; font-weight: 600; text-align: left;
+  cursor: pointer;
+}
+.vrow.is-active .vname { color: #fff; }
+.vrow:not(.is-active) .vname { font-weight: 500; color: var(--fg-dim); }
+.vname:active { background: rgba(255,255,255,.09); }
+.vmark { flex: 0 0 auto; padding-right: 10px; color: var(--accent); font-weight: 700; }
+input.vedit { margin: 0 4px; }

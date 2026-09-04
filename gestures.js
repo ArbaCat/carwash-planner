@@ -406,6 +406,13 @@ export function createGestures(ctx) {
     if (e.target?.closest?.('input, textarea, [contenteditable]')) return;
     if (e.code === 'Space') { spaceDown = true; return; }
 
+    // отмена работает и без выделения, поэтому раньше проверки на объект
+    if ((e.metaKey || e.ctrlKey) && 'zZяЯ'.includes(e.key)) {
+      e.preventDefault();
+      if (e.shiftKey) A.redo(); else A.undo();
+      return;
+    }
+
     const id = state.selectedId;
     if (!id) return;
     if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); A.remove(id); return; }

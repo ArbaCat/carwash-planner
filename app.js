@@ -8,6 +8,7 @@ import {
 } from './meshes.js';
 import { createObjectActions, computeFlags } from './objects.js';
 import { createGestures } from './gestures.js';
+import { createStorage, createHistory } from './storage.js';
 import * as G from './geometry.js';
 import { S, fmtSize, fmtCmPlain } from './strings.js';
 import * as UI from './ui.js';
@@ -71,7 +72,25 @@ function defaultScene() {
   };
 }
 
-const state = { scene: defaultScene(), selectedId: null, flags: new Map() };
+const storage = createStorage({
+  onQuota: () => toast(S.errQuota, 'err'),
+  onUnavailable: () => toast(S.errNoStorage, 'warn'),
+});
+const history = createHistory(100);
+
+const store = { activeId: 'v1', variants: [{ id: 'v1', scene: defaultScene() }] };
+const state = { scene: store.variants[0].scene, selectedId: null, flags: new Map() };
+
+const activeVariant = () => store.variants.find((v) => v.id === store.activeId);
+
+function nextVariantName() {
+  const used = new Set(store.variants.map((v) => v.scene.name));
+  for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+    const name = `${S.variantPrefix} ${ch}`;
+    if (!used.has(name)) return name;
+  }
+  return `${S.variantPrefix} ${store.variants.length + 1}`;
+}
 const ui = { panel: 'hint', wallEdit: false, gatePick: false, rectDraft: null, badVertex: -1 };
 
 const uid = (p) => p + Math.random().toString(36).slice(2, 8);
@@ -172,11 +191,33 @@ function select(id) {
   else if (ui.panel === 'props') ui.panel = 'hint';
 }
 
-/** Единая точка после любого изменения данных. Автосейв и undo сядут сюда. */
+function updateUndoButtons() {
+  el.btnUndo.disabled = !history.canUndo(store.activeId);
+  el.btnRedo.disabled = !history.canRedo(store.activeId);
+}
+
+/** Единая точка после любого изменения данных: история, автосейв, перерисовка.
+ *  Один драг = одна запись в историю, потому что commit зовётся на pointerup,
+ *  а не на каждом движении. */
 function commit({ rebuild = true, panel = true } = {}) {
   state.scene.updatedAt = new Date().toISOString();
+  history.push(store.activeId, state.scene);
+  storage.save(store);
+  updateUndoButtons();
   if (rebuild) renderScene();
   if (panel) renderPanel();
+}
+
+/** Подставить сцену целиком — отмена, возврат, импорт, переключение варианта. */
+function applyScene(scene) {
+  activeVariant().scene = scene;
+  state.scene = scene;
+  if (!scene.objects.some((o) => o.id === state.selectedId)) select(null);
+  el.variantName.textContent = scene.name;
+  storage.save(store);
+  updateUndoButtons();
+  renderScene();
+  renderPanel();
 }
 
 // ---- шторка и панели ---------------------------------------------------
@@ -348,6 +389,64 @@ const A = {
 
 Object.assign(A, createObjectActions({ state, ui, commit, uid, select, viewCenter }));
 
+Object.assign(A, {
+  undo() { const s = history.undo(store.activeId); if (s) applyScene(s); },
+  redo() { const s = history.redo(store.activeId); if (s) applyScene(s); },
+
+  switchVariant(id) {
+    if (!store.variants.some((v) => v.id === id)) return;
+    store.activeId = id;
+    state.scene = activeVariant().scene;
+    history.ensure(id, state.scene);
+    select(null);
+    ui.wallEdit = false; ui.gatePick = false; ui.badVertex = -1;
+    el.variantName.textContent = state.scene.name;
+    storage.save(store);
+    updateUndoButtons();
+    renderScene();
+    renderPanel();
+    fitRoom();
+  },
+
+  newVariant() {
+    const scene = defaultScene();
+    scene.name = nextVariantName();
+    const id = uid('v');
+    store.variants = [...store.variants, { id, scene }];
+    history.reset(id, scene);
+    A.switchVariant(id);
+  },
+
+  duplicateVariant() {
+    const scene = JSON.parse(JSON.stringify(state.scene));
+    scene.name = `${state.scene.name} (${S.copySuffix})`;
+    const id = uid('v');
+    store.variants = [...store.variants, { id, scene }];
+    history.reset(id, scene);
+    A.switchVariant(id);
+  },
+
+  renameVariant(id, name) {
+    const v = store.variants.find((x) => x.id === id);
+    if (!v) return;
+    const next = (name || '').trim();
+    if (next) v.scene.name = next;
+    if (id === store.activeId) el.variantName.textContent = v.scene.name;
+    storage.save(store);
+    renderPanel();
+  },
+
+  deleteVariant() {
+    if (store.variants.length <= 1) return;
+    const gone = store.activeId;
+    store.variants = store.variants.filter((v) => v.id !== gone);
+    history.drop(gone);
+    A.switchVariant(store.variants[0].id);
+  },
+
+  getStore() { return store; },
+});
+
 // ---- жесты -------------------------------------------------------------
 
 const gestures = createGestures({
@@ -392,12 +491,24 @@ window.addEventListener('orientationchange', () => setTimeout(() => { fitCanvas(
 function boot() {
   const r = el.canvasHost.getBoundingClientRect();
   sc.resize(r.width, r.height);
+
+  const saved = storage.load();
+  if (saved) {
+    store.activeId = saved.activeId;
+    store.variants = saved.variants;
+    state.scene = activeVariant().scene;
+  }
+  history.ensure(store.activeId, state.scene);
+  updateUndoButtons();
   el.variantName.textContent = state.scene.name;
 
   el.btnTop.addEventListener('click', () => setView('top'));
   el.btn3d.addEventListener('click', () => setView('3d'));
   el.btnRoom.addEventListener('click', () => showPanel(ui.panel === 'room' ? 'hint' : 'room'));
   el.btnAdd.addEventListener('click', () => showPanel(ui.panel === 'add' ? 'hint' : 'add'));
+  el.btnUndo.addEventListener('click', () => A.undo());
+  el.btnRedo.addEventListener('click', () => A.redo());
+  el.btnVariants.addEventListener('click', () => UI.popover(el.btnVariants, UI.variantsMenu(store, A)));
 
   renderScene();
   // сначала шторка, потом вписывание: fitRoom считает свободную часть кадра
