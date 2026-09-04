@@ -237,6 +237,28 @@ export function polygonBounds(poly) {
            maxX: Math.max(...xs), maxY: Math.max(...ys) };
 }
 
+/** Ближайшее ребро полигона к точке: индекс, положение вдоль ребра в см,
+ *  расстояние и сама проекция. При равном расстоянии выигрывает ребро
+ *  с меньшим индексом. Нужно, чтобы поставить ворота тапом по стене. */
+export function nearestEdge(p, poly) {
+  let best = null;
+  const n = poly.length;
+  for (let i = 0; i < n; i++) {
+    const a = poly[i], b = poly[(i + 1) % n];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const len2 = ex * ex + ey * ey;
+    const len = Math.sqrt(len2);
+    let t = len2 < 1e-12 ? 0 : ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / len2;
+    t = Math.min(1, Math.max(0, t));
+    const qx = a[0] + ex * t, qy = a[1] + ey * t;
+    const dist = Math.hypot(p[0] - qx, p[1] - qy);
+    if (best === null || dist < best.dist) {
+      best = { index: i, t: t * len, dist, point: [qx, qy], length: len };
+    }
+  }
+  return best;
+}
+
 /** Нормализовать полигон к обходу против часовой. */
 export function normalizePolygon(poly) {
   return polygonArea(poly) < 0 ? [...poly].reverse() : [...poly];

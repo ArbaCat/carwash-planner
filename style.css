@@ -202,3 +202,128 @@ html, body {
 }
 .toast.is-warn { border-color: var(--warn); }
 .toast.is-err  { border-color: var(--danger); }
+
+/* ---------- содержимое шторки ---------- */
+
+#sheet-body h2 { margin: 4px 0 10px; font-size: 19px; }
+#sheet-body h3 {
+  margin: 0 0 8px;
+  font-size: 12px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.sec { padding: 12px 0; border-top: 1px solid var(--line); }
+.sec:first-child { border-top: 0; padding-top: 0; }
+
+.hint { margin: 8px 0; color: var(--fg-dim); font-size: 13px; }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+
+/* поля */
+.fld { display: block; margin-bottom: 10px; }
+.fld-lbl { display: block; margin-bottom: 4px; font-size: 13px; color: var(--fg-dim); }
+.fld-row { display: flex; align-items: stretch; gap: 6px; }
+.fld-suf { align-self: center; font-size: 13px; color: var(--fg-dim); }
+
+input.num, input.txt {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #14181d;
+  color: var(--fg);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  -webkit-appearance: none; appearance: none;
+}
+input.num { text-align: center; }
+input.num::-webkit-outer-spin-button,
+input.num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input.num:focus, input.txt:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.step {
+  flex: 0 0 auto;
+  width: var(--tap); min-height: var(--tap);
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--chrome-2); color: var(--fg);
+  font: inherit; font-size: 20px; line-height: 1;
+  cursor: pointer;
+  -webkit-user-select: none; user-select: none;
+}
+.step:active { background: #313943; }
+
+/* кнопки */
+.btn {
+  min-height: var(--tap);
+  padding: 0 14px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--chrome-2); color: var(--fg);
+  font: inherit; font-weight: 600;
+  cursor: pointer;
+  -webkit-user-select: none; user-select: none;
+}
+.btn:active:not(:disabled) { background: #313943; }
+.btn:disabled { opacity: .38; cursor: default; }
+.btn-wide { display: block; width: 100%; margin-top: 8px; }
+.btn-primary { background: var(--accent); border-color: transparent; }
+.btn-danger { color: #ffb3b1; border-color: #5d2b2a; }
+.btn-danger.is-armed { background: var(--danger); color: #fff; border-color: transparent; }
+
+.icon-btn {
+  width: var(--tap); height: var(--tap);
+  border: 0; border-radius: 10px;
+  background: transparent; color: var(--fg-dim);
+  font-size: 22px; line-height: 1;
+  cursor: pointer;
+}
+.icon-btn:active:not(:disabled) { background: var(--chrome-2); color: var(--fg); }
+.icon-btn:disabled { opacity: .3; cursor: default; }
+
+/* строка с тумблером */
+.row { display: flex; align-items: center; gap: 10px; min-height: var(--tap); }
+.row-lbl { flex: 1 1 auto; }
+
+.tgl {
+  flex: 0 0 auto;
+  width: 52px; height: 32px;
+  padding: 3px;
+  border: 1px solid var(--line); border-radius: 16px;
+  background: var(--chrome-2);
+  cursor: pointer;
+  transition: background .14s ease;
+  position: relative;
+}
+.tgl.is-on { background: var(--accent); border-color: transparent; }
+.tgl-knob {
+  display: block; width: 24px; height: 24px;
+  border-radius: 50%; background: #fff;
+  transition: transform .14s ease;
+}
+.tgl.is-on .tgl-knob { transform: translateX(20px); }
+/* сама кнопка визуально 52x32, но зона нажатия — 44 по высоте */
+.tgl::after { content: ''; position: absolute; inset: -6px -0px; }
+
+/* таблица вершин */
+.vtab { width: 100%; border-collapse: collapse; }
+.vtab th {
+  padding: 0 4px 6px; text-align: left;
+  font-size: 12px; font-weight: 600; color: var(--fg-dim);
+}
+.vtab td { padding: 3px 4px 3px 0; }
+.vtab .vno { width: 26px; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+input.num-cell { min-height: var(--tap); }
+
+/* карточка (ворота, объекты каталога) */
+.card {
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: rgba(255,255,255,.03);
+}
+.card-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.card-hd strong { flex: 0 0 auto; }
+.card-sub { flex: 1 1 auto; font-size: 12px; color: var(--fg-dim); }

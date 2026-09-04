@@ -259,3 +259,25 @@ test('expandObb: нулевой отступ ничего не меняет', ()
   assert.equal(z.l, 100);
   assert.equal(z.w, 50);
 });
+
+// -------------------------------------------------------- nearestEdge
+
+test('nearestEdge: находит стену под тапом и место на ней', () => {
+  const r = G.nearestEdge([500, 30], RECT);
+  assert.equal(r.index, 0, 'ребро (0,0)-(1000,0)');
+  near(r.dist, 30);
+  near(r.t, 500);
+});
+
+test('nearestEdge: выступ ближе дальней стены', () => {
+  // точка под потолком выреза: ближайшее — ребро y=400, а не y=600
+  const r = G.nearestEdge([1000, 380], L_ROOM);
+  assert.equal(r.index, 2, 'ребро (1200,400)-(900,400)');
+  near(r.dist, 20);
+});
+
+test('nearestEdge: за концом ребра мерит до вершины', () => {
+  const r = G.nearestEdge([-40, -30], RECT);
+  near(r.dist, 50);          // до угла (0,0)
+  near(r.t, 0);
+});
