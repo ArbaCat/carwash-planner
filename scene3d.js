@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 export const DEG = Math.PI / 180;
 
@@ -68,8 +69,23 @@ export function createScene({ canvasHost, labelHost }) {
   // состояние вида сверху в единицах комнаты
   const topView = { cx: 0, cy: 0, pxPerCm: 0.5 };
 
+  // Орбита. Демпфирование выключено намеренно: оно требует непрерывного
+  // rAF, а рендерим мы по требованию, чтобы iPad не грелся от простоя.
+  const controls = new OrbitControls(persp, renderer.domElement);
+  controls.enableDamping = false;
+  controls.enabled = false;
+  controls.maxPolarAngle = Math.PI / 2 * 0.98;   // под пол не пускаем
+  controls.minDistance = 150;
+  controls.maxDistance = 20000;
+  controls.addEventListener('change', () => requestRender());
+
+  const raycaster = new THREE.Raycaster();
+  const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
   let size = { w: 1, h: 1 };
   let mode = 'top';           // 'top' | '3d'
+  let framed3d = false;       // камеру 3D ставим только при первом входе
+  let bandInsets = null;      // функция, отдающая отступы тулбара и шторки
   let needsRender = false, rafId = 0;
   let lost = false;
 
@@ -107,13 +123,104 @@ export function createScene({ canvasHost, labelHost }) {
     size = { w: Math.max(1, w), h: Math.max(1, h) };
     renderer.setSize(size.w, size.h, false);
     labels.setSize(size.w, size.h);
-    persp.aspect = size.w / size.h;
-    persp.updateProjectionMatrix();
+    if (bandInsets) setViewBand(bandInsets());
+    else { persp.aspect = size.w / size.h; persp.updateProjectionMatrix(); }
     applyTopFrustum();
     requestRender();
   }
 
-  function setMode(m) { mode = m; requestRender(); }
+  function setMode(m) {
+    mode = m;
+    controls.enabled = (m === '3d');
+    requestRender();
+  }
+
+  // Свободная от тулбара и шторки полоса кадра. Перспективной камере она
+  // задаётся через setViewOffset: камера строит фрустум для виртуального
+  // холста, из которого мы рисуем реальный, — так центр кадра совпадает
+  // с центром видимой полосы, и комната не уезжает под шторку.
+  let band = null;
+
+  function setViewBand(ins) {
+    const W = size.w, H = size.h;
+    const vw = Math.max(80, W - ins.left - ins.right);
+    const vh = Math.max(80, H - ins.top - ins.bottom);
+    const cx = ins.left + vw / 2, cy = ins.top + vh / 2;
+    const fullW = 2 * Math.max(cx, W - cx);
+    const fullH = 2 * Math.max(cy, H - cy);
+    band = { fullW, fullH, offX: fullW / 2 - cx, offY: fullH / 2 - cy, vw, vh };
+    persp.aspect = fullW / fullH;
+    persp.setViewOffset(fullW, fullH, band.offX, band.offY, W, H);
+    persp.updateProjectionMatrix();
+    requestRender();
+  }
+
+  /** Тангенсы полуугла обзора видимой полосы — по ним считается дистанция. */
+  function bandTangents() {
+    const t = Math.tan(persp.fov * DEG / 2);
+    if (!band) return { v: t, h: t * persp.aspect };
+    return {
+      v: t * (band.vh / band.fullH),
+      h: t * persp.aspect * (band.vw / band.fullW),
+    };
+  }
+
+  /** Поставить камеру 3D так, чтобы комната целиком влезла в кадр. */
+  function frame3d(bounds, wallHeight) {
+    const cx = (bounds.minX + bounds.maxX) / 2;
+    const cy = (bounds.minY + bounds.maxY) / 2;
+    const rw = Math.max(100, bounds.maxX - bounds.minX);
+    const rd = Math.max(100, bounds.maxY - bounds.minY);
+    const radius = Math.hypot(rw, rd, wallHeight) / 2;
+
+    const tg = bandTangents();
+    const dist = radius / Math.sin(Math.atan(Math.min(tg.v, tg.h))) * 1.06;
+
+    controls.target.set(wx(cx), wallHeight * 0.35, wz(cy));
+    // взгляд с угла: азимут 45°, подъём 32°
+    const az = Math.PI / 4, el = 32 * DEG;
+    persp.position.set(
+      controls.target.x + Math.cos(el) * Math.cos(az) * dist,
+      controls.target.y + Math.sin(el) * dist,
+      controls.target.z + Math.cos(el) * Math.sin(az) * dist,
+    );
+    controls.update();
+    framed3d = true;
+    requestRender();
+  }
+
+  const needsFraming = () => !framed3d;
+
+  /** Мировые матрицы считаются при рендере, а рендерим мы по требованию.
+   *  Значит, тап сразу после пересборки сцены попал бы по старым матрицам —
+   *  поэтому перед рейкастом обновляем их руками. Узлов десятки, это дёшево. */
+  function syncMatrices(root) {
+    persp.updateMatrixWorld();
+    if (root) root.updateWorldMatrix(false, true);
+  }
+
+  /** Экран -> точка на полу комнаты через рейкаст. Нужно для драга в 3D. */
+  function screenToFloor(px, py) {
+    syncMatrices(null);
+    const ndc = new THREE.Vector2((px / size.w) * 2 - 1, -(py / size.h) * 2 + 1);
+    raycaster.setFromCamera(ndc, persp);
+    const hit = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(floorPlane, hit)) return null;
+    return { x: hit.x, y: -hit.z };
+  }
+
+  /** Какой объект под точкой экрана в 3D. */
+  function pickObject3d(px, py) {
+    syncMatrices(gObjects);
+    const ndc = new THREE.Vector2((px / size.w) * 2 - 1, -(py / size.h) * 2 + 1);
+    raycaster.setFromCamera(ndc, persp);
+    for (const hit of raycaster.intersectObjects(gObjects.children, true)) {
+      let n = hit.object;
+      while (n && !n.userData.id) n = n.parent;
+      if (n?.userData.id) return n.userData.id;
+    }
+    return null;
+  }
   function getMode() { return mode; }
 
   function setTopView(cx, cy, pxPerCm) {
@@ -194,7 +301,9 @@ export function createScene({ canvasHost, labelHost }) {
     groups: { gRoom, gGrid, gOutline, gObjects, gOverlay, gDim, gEdit },
     cameras: { top, persp },
     CSS2DObject,
-    requestRender, drawNow, resize, setMode, getMode,
+    controls, requestRender, drawNow, resize, setMode, getMode,
+    frame3d, needsFraming, screenToFloor, pickObject3d, setViewBand,
+    onInsets(fn) { bandInsets = fn; },
     setTopView, getTopView, getSize,
     screenToRoom, roomToScreen,
     buildGrid, clear, lines,

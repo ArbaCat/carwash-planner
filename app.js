@@ -80,6 +80,7 @@ const uid = (p) => p + Math.random().toString(36).slice(2, 8);
 
 const sc = createScene({ canvasHost: el.canvasHost, labelHost: el.labelHost });
 sc.onContextLost(() => toast(S.errWebgl, 'err'));
+sc.onInsets(() => viewInsets());
 
 /** Свободный от тулбара и шторки прямоугольник канваса, в пикселях. */
 function viewInsets() {
@@ -119,7 +120,9 @@ function fitRoom() {
 function renderZoomDependent() {
   const ppc = sc.getTopView().pxPerCm;
   buildWallOutline(sc, state.scene.room, ppc);
-  buildObjectOverlay(sc, state.scene, { selectedId: state.selectedId, flags: state.flags, pxPerCm: ppc });
+  buildObjectOverlay(sc, state.scene, {
+    selectedId: state.selectedId, flags: state.flags, pxPerCm: ppc, mode: sc.getMode(),
+  });
   if (ui.wallEdit && sc.getMode() === 'top') {
     buildEditHandles(sc, state.scene.room, ppc, { badIndex: ui.badVertex });
   } else {
@@ -203,6 +206,7 @@ el.sheet.addEventListener('transitionend', (e) => {
   if (e.target !== el.sheet || e.propertyName !== 'height' || reframeFrom === null) return;
   const d = reframeFrom - el.sheet.getBoundingClientRect().top;
   reframeFrom = null;
+  sc.setViewBand(viewInsets());
   if (Math.abs(d) < 2 || window.innerWidth > 1000) return;
   const v = sc.getTopView();
   sc.setTopView(v.cx, v.cy - (d / 2) / v.pxPerCm);
@@ -355,7 +359,14 @@ gestures.attach(sc.renderer.domElement);
 // ---- вид ---------------------------------------------------------------
 
 function setView(mode) {
+  const is3d = mode === '3d';
   sc.setMode(mode);
+  // контур стен и ручки правки заданы в пикселях вида сверху — в 3D им нечего делать
+  sc.groups.gOutline.visible = !is3d;
+  sc.groups.gEdit.visible = !is3d;
+  if (is3d && sc.needsFraming()) {
+    sc.frame3d(G.polygonBounds(state.scene.room.vertices), state.scene.room.wallHeight);
+  }
   el.btnTop.classList.toggle('is-on', mode === 'top');
   el.btn3d.classList.toggle('is-on', mode === '3d');
   el.btnTop.setAttribute('aria-selected', String(mode === 'top'));
@@ -391,6 +402,7 @@ function boot() {
   renderScene();
   // сначала шторка, потом вписывание: fitRoom считает свободную часть кадра
   withoutTransition(() => showPanel('hint'));
+  sc.setViewBand(viewInsets());
   fitRoom();
 }
 

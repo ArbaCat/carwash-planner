@@ -321,9 +321,11 @@ export function rotateHandlePos(o, pxPerCm) {
 }
 
 /** Контуры состояния, выделение и ручка поворота. Задано в пикселях. */
-export function buildObjectOverlay(sc, scene, { selectedId, flags, pxPerCm }) {
+export function buildObjectOverlay(sc, scene, { selectedId, flags, pxPerCm, mode = 'top' }) {
   sc.clear(sc.groups.gOverlay);
-  const px = (n) => n / Math.max(pxPerCm, 1e-6);
+  // В 3D пиксельные толщины бессмысленны — там контуры задаются в сантиметрах,
+  // а ручка поворота вообще не рисуется: крутить объект — дело вида сверху.
+  const px = mode === '3d' ? (n) => n * 1.6 : (n) => n / Math.max(pxPerCm, 1e-6);
 
   for (const o of scene.objects) {
     const c = corners(o);
@@ -337,6 +339,7 @@ export function buildObjectOverlay(sc, scene, { selectedId, flags, pxPerCm }) {
 
     if (o.id === selectedId) {
       sc.groups.gOverlay.add(ribbon(loop(c), px(2.5), MAT2.selLine, 1.9));
+      if (mode === '3d') continue;
 
       const hp = rotateHandlePos(o, pxPerCm);
       const t = (o.rot || 0) * DEG;
@@ -365,10 +368,10 @@ function dashes(p, q, dashCm, gapCm) {
 }
 
 /** Размерные линии до стен по четырём направлениям мира. Рисуются на драге. */
-export function buildDimLines(sc, o, dists, pxPerCm, fmt) {
+export function buildDimLines(sc, o, dists, pxPerCm, fmt, mode = 'top') {
   sc.clear(sc.groups.gDim);
   if (!o) { sc.requestRender(); return; }
-  const px = (n) => n / Math.max(pxPerCm, 1e-6);
+  const px = mode === '3d' ? (n) => n * 1.8 : (n) => n / Math.max(pxPerCm, 1e-6);
 
   const c = corners(o);
   const xs = c.map((p) => p[0]), ys = c.map((p) => p[1]);

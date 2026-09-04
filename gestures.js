@@ -17,6 +17,13 @@ const LONG_MS = 600;
 const SNAP = 10;        // шаг привязки, см
 const ROT_STEP = 15;    // шаг поворота ручкой, градусы
 
+/** Захват указателя — это удобство: события продолжают идти, даже когда палец
+ *  уехал за пределы канваса. Но браузер может отказать (указатель уже не
+ *  активен), а исключение здесь убивало бы весь жест. Поэтому глушим. */
+function capture(el, pointerId) {
+  try { el.setPointerCapture?.(pointerId); } catch { /* обойдёмся без захвата */ }
+}
+
 export function createGestures(ctx) {
   const {
     sc, state, ui, A, toast, commit,
@@ -155,11 +162,63 @@ export function createGestures(ctx) {
     commit();
   }
 
+  // ---- драг объекта в 3D ----------------------------------------------
+
+  // Ловим в фазе перехвата, раньше OrbitControls: палец на объекте — это
+  // перетаскивание, палец на пустом — орбита. stopPropagation держит орбиту
+  // в стороне, не выключая её, — иначе потерянный pointerup оставил бы
+  // орбиту мёртвой навсегда.
+  let g3 = null;
+
+  function on3dDown(e) {
+    if (sc.getMode() !== '3d' || g3) return;
+    const p = localPt(e);
+    const id = sc.pickObject3d(p.x, p.y);
+    if (!id) return;
+    const f = sc.screenToFloor(p.x, p.y);
+    const o = byId(id);
+    if (!f || !o) return;
+
+    e.stopPropagation();
+    capture(cv, e.pointerId);
+    g3 = {
+      id: e.pointerId, objId: id,
+      grab: { dx: f.x - o.x, dy: f.y - o.y },
+      base: computeFlags(objs(), poly(), id),
+    };
+    if (state.selectedId !== id) { select(id); renderPanel(); }
+  }
+
+  function on3dMove(e) {
+    if (!g3 || e.pointerId !== g3.id) return;
+    e.stopPropagation();
+    const p = localPt(e);
+    const f = sc.screenToFloor(p.x, p.y);
+    const o = byId(g3.objId);
+    if (!f || !o) return;
+    o.x = G.snap(f.x - g3.grab.dx, SNAP);
+    o.y = G.snap(f.y - g3.grab.dy, SNAP);
+    state.flags = flagsWithMoving(objs(), poly(), o.id, g3.base);
+    moveObjectMesh(sc, o, state.flags.get(o.id));
+    buildObjectOverlay(sc, state.scene, {
+      selectedId: state.selectedId, flags: state.flags, pxPerCm: ppc(), mode: '3d',
+    });
+    buildDimLines(sc, o, G.distanceToWalls(o, poly()), ppc(), fmtCmPlain, '3d');
+  }
+
+  function on3dUp(e) {
+    if (!g3 || e.pointerId !== g3.id) return;
+    e.stopPropagation();
+    g3 = null;
+    buildDimLines(sc, null);
+    commit();
+  }
+
   // ---- события ---------------------------------------------------------
 
   function onDown(e) {
     if (sc.getMode() !== 'top') return;
-    cv.setPointerCapture?.(e.pointerId);
+    capture(cv, e.pointerId);
     const p = localPt(e);
     ptrs.set(e.pointerId, p);
 
@@ -343,7 +402,8 @@ export function createGestures(ctx) {
   }
 
   function onKey(e) {
-    if (e.target.closest('input, textarea, [contenteditable]')) return;
+    // target не всегда элемент: у события, отправленного на window, closest нет
+    if (e.target?.closest?.('input, textarea, [contenteditable]')) return;
     if (e.code === 'Space') { spaceDown = true; return; }
 
     const id = state.selectedId;
@@ -356,6 +416,10 @@ export function createGestures(ctx) {
   return {
     attach(canvas) {
       cv = canvas;
+      cv.addEventListener('pointerdown', on3dDown, true);
+      cv.addEventListener('pointermove', on3dMove, true);
+      cv.addEventListener('pointerup', on3dUp, true);
+      cv.addEventListener('pointercancel', on3dUp, true);
       cv.addEventListener('pointerdown', onDown);
       cv.addEventListener('pointermove', onMove);
       cv.addEventListener('pointerup', onUp);
