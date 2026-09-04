@@ -131,28 +131,32 @@ Three.js версии `0.185.1` лежит в `vendor/` целиком: на м�
 
 Другой язык добавляется правкой одного файла: все тексты лежат в `strings.js`.
 
-## Деплой на Cloudflare Pages
+## Где живёт
 
-Репозиторий приватный, поэтому GitHub Pages не подходит (на бесплатном
-тарифе он приватные репо не отдаёт). Cloudflare Pages отдаёт статику из
-приватного репо бесплатно.
+Сайт: **https://arbacat.github.io/carwash-planner/**
 
-Подключить нужно один раз, руками:
+Отдаётся GitHub Pages прямо из ветки `main`, из корня репозитория. Каждый
+`git push` в `main` пересобирает сайт сам — ничего запускать не надо.
+Репозиторий для этого сделан публичным: на бесплатном тарифе Pages приватные
+репозитории не отдаёт. Секретов в коде нет — только сам планировщик и вшитый
+Three.js.
 
-1. Зайти на [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages**
-2. **Create** → вкладка **Pages** → **Connect to Git**
-3. Разрешить доступ к репозиторию `ArbaCat/carwash-planner`
-4. Настройки сборки:
-   - **Framework preset** — `None`
-   - **Build command** — оставить пустым
-   - **Build output directory** — `/`
-5. **Save and Deploy**
+Все пути в `index.html` и манифесте относительные (`./app.js`, `./vendor/...`),
+поэтому сайт работает и в подпапке `/carwash-planner/`, и в корне домена, и
+с диска через локальный сервер. `.nojekyll` в корне выключает обработку
+Jekyll — файлы отдаются как есть.
 
-Дальше каждый `git push` в `main` разворачивается сам на
-`https://carwash-planner.pages.dev`.
+Посмотреть состояние сборки:
 
-Если с Cloudflare не сложится — та же статика уезжает на Netlify
-(`npx netlify-cli deploy --prod --dir=.`) или Vercel.
+```bash
+gh api repos/ArbaCat/carwash-planner/pages/builds/latest --jq '{status, created_at}'
+```
+
+Если когда-нибудь понадобится закрыть код обратно, Pages на бесплатном тарифе
+отвалится. Тогда та же статика уезжает на Cloudflare Pages (Workers & Pages →
+Create → Pages → Connect to Git, build command пустой, output directory `/`),
+на Netlify (`npx netlify-cli deploy --prod --dir=.`) или Vercel — все три
+отдают приватные репозитории бесплатно.
 
 ## Что проверено, а что нет
 
