@@ -1,0 +1,204 @@
+/* Планировщик мойки — оформление.
+   Тач — первый класс: все кликабельные элементы не меньше 44x44. */
+
+:root {
+  --bg:        #eef1f4;
+  --chrome:    #1b1f24;
+  --chrome-2:  #262c33;
+  --line:      #3a424c;
+  --fg:        #f2f5f7;
+  --fg-dim:    #9aa6b2;
+  --accent:    #2f7de1;
+  --danger:    #d9433f;
+  --warn:      #e08a2b;
+
+  --tb-h: 56px;
+  --sheet-collapsed: 56px;
+
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+
+  --tap: 44px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* ---------- сцена ---------- */
+
+#stage { position: fixed; inset: 0; }
+
+#canvas-host { position: absolute; inset: 0; }
+#canvas-host canvas {
+  display: block;
+  width: 100%; height: 100%;
+  touch-action: none;          /* жесты обрабатываем сами */
+  outline: none;
+}
+
+/* слой HTML-подписей (CSS2DRenderer) — сквозной для событий */
+#label-host { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+#label-host > div { position: absolute; top: 0; left: 0; }
+
+.lbl {
+  transform: translate(-50%, -50%);
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(255,255,255,.82);
+  color: #1b1f24;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+}
+.lbl small { display: block; font-weight: 500; font-size: 11px; opacity: .72; }
+.lbl.is-dim { background: rgba(255,255,255,.62); font-weight: 500; }
+.lbl.is-dist {
+  background: rgba(27,31,36,.86); color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- тулбар ---------- */
+
+#toolbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 20;
+  display: flex; align-items: center; gap: 8px;
+  height: calc(var(--tb-h) + var(--sat));
+  padding: var(--sat) calc(10px + var(--sar)) 0 calc(10px + var(--sal));
+  background: color-mix(in srgb, var(--chrome) 92%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+
+.tb-spacer { flex: 1 1 auto; }
+.tb-group { display: flex; gap: 4px; }
+
+.tb-btn {
+  min-width: var(--tap); min-height: var(--tap);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--chrome-2);
+  color: var(--fg);
+  font: inherit; font-weight: 600;
+  cursor: pointer;
+  -webkit-user-select: none; user-select: none;
+  white-space: nowrap;
+}
+.tb-btn:disabled { opacity: .38; cursor: default; }
+.tb-btn:active:not(:disabled) { background: #313943; }
+.tb-btn.tb-primary { background: var(--accent); border-color: transparent; }
+.tb-btn.is-on { background: var(--accent); border-color: transparent; }
+
+.seg {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--chrome-2);
+}
+.seg-btn {
+  min-width: 76px; min-height: var(--tap);
+  padding: 0 12px;
+  border: 0; background: transparent;
+  color: var(--fg-dim);
+  font: inherit; font-weight: 600;
+  cursor: pointer;
+  -webkit-user-select: none; user-select: none;
+}
+.seg-btn.is-on { background: var(--accent); color: #fff; }
+
+/* ---------- шторка ---------- */
+
+#sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 25;
+  display: flex; flex-direction: column;
+  max-height: 100%;
+  background: color-mix(in srgb, var(--chrome) 96%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  border-radius: 14px 14px 0 0;
+  padding-bottom: var(--sab);
+  transition: height .18s ease;
+  height: 42vh;
+  touch-action: pan-y;
+}
+#sheet.is-collapsed { height: calc(var(--sheet-collapsed) + var(--sab)); }
+
+#sheet-grab {
+  flex: 0 0 auto;
+  height: var(--sheet-collapsed);
+  border: 0; background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.grab-pill { width: 44px; height: 5px; border-radius: 3px; background: var(--fg-dim); }
+
+#sheet-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 14px 16px;
+}
+#sheet.is-collapsed #sheet-body { display: none; }
+
+/* широкий экран — боковая панель справа */
+@media (min-width: 1001px) {
+  #sheet {
+    top: calc(var(--tb-h) + var(--sat));
+    left: auto; right: 0; bottom: 0;
+    width: 360px; height: auto;
+    max-height: none;
+    border-radius: 0;
+    border-top: 0; border-left: 1px solid var(--line);
+    transition: none;
+  }
+  #sheet.is-collapsed { height: auto; width: 56px; }
+  #sheet-grab { height: 48px; }
+  #sheet.is-collapsed .grab-pill { width: 5px; height: 44px; }
+}
+
+/* ---------- тосты ---------- */
+
+#toast-host {
+  position: fixed;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--sheet-collapsed) + var(--sab) + 14px);
+  z-index: 40;
+  display: flex; flex-direction: column; gap: 8px;
+  align-items: center;
+  pointer-events: none;
+  width: min(92vw, 520px);
+}
+.toast {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(27,31,36,.94);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 20px rgba(0,0,0,.28);
+  font-size: 14px;
+  text-align: center;
+}
+.toast.is-warn { border-color: var(--warn); }
+.toast.is-err  { border-color: var(--danger); }

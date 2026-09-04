@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Планировщик мойки</title>
+
+<meta name="theme-color" content="#1b1f24">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Мойка">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="stylesheet" href="./style.css">
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.min.js",
+    "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js",
+    "three/addons/renderers/CSS2DRenderer.js": "./vendor/CSS2DRenderer.js"
+  }
+}
+</script>
+</head>
+<body>
+
+<div id="stage">
+  <div id="canvas-host"></div>
+  <div id="label-host"></div>
+</div>
+
+<header id="toolbar">
+  <div class="seg" role="tablist" aria-label="Вид">
+    <button id="btn-view-top" class="seg-btn is-on" role="tab" aria-selected="true">Сверху</button>
+    <button id="btn-view-3d"  class="seg-btn"       role="tab" aria-selected="false">3D</button>
+  </div>
+
+  <div class="tb-group">
+    <button id="btn-undo" class="tb-btn" title="Отменить" aria-label="Отменить" disabled>↶</button>
+    <button id="btn-redo" class="tb-btn" title="Вернуть"  aria-label="Вернуть"  disabled>↷</button>
+  </div>
+
+  <div class="tb-spacer"></div>
+
+  <button id="btn-add"  class="tb-btn tb-primary">+&nbsp;Добавить</button>
+  <button id="btn-room" class="tb-btn">Комната</button>
+  <button id="btn-variants" class="tb-btn"><span id="variant-name">Вариант A</span> ▾</button>
+  <button id="btn-more" class="tb-btn" title="Ещё" aria-label="Ещё">⋯</button>
+</header>
+
+<section id="sheet" class="is-collapsed" aria-label="Панель">
+  <button id="sheet-grab" aria-label="Развернуть панель"><span class="grab-pill"></span></button>
+  <div id="sheet-body"></div>
+</section>
+
+<div id="menu-host"></div>
+<div id="toast-host" aria-live="polite"></div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
