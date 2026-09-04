@@ -9,6 +9,7 @@ import {
 import { createObjectActions, computeFlags } from './objects.js';
 import { createGestures } from './gestures.js';
 import { createStorage, createHistory } from './storage.js';
+import { createRoomActions, createShellActions } from './actions.js';
 import * as IO from './io.js';
 import * as G from './geometry.js';
 import { S, fmtSize, fmtCmPlain } from './strings.js';
@@ -229,7 +230,28 @@ const sheet = {
   toggle() { el.sheet.classList.contains('is-collapsed') ? this.open() : this.close(); },
   isOpen() { return !el.sheet.classList.contains('is-collapsed'); },
 };
-el.sheetGrab.addEventListener('click', () => sheet.toggle());
+// Шторка открывается тапом и свайпом. Свайп ловим на самой ручке: канвас
+// свои жесты обрабатывает сам, и мешать им незачем.
+let grabDrag = null;
+let swipedAt = 0;
+
+el.sheetGrab.addEventListener('pointerdown', (e) => {
+  grabDrag = { y: e.clientY, open: sheet.isOpen() };
+});
+el.sheetGrab.addEventListener('pointermove', (e) => {
+  if (!grabDrag) return;
+  const dy = e.clientY - grabDrag.y;
+  if (Math.abs(dy) < 24) return;
+  if (dy < 0 && !grabDrag.open) { sheet.open(); swipedAt = Date.now(); grabDrag = null; }
+  else if (dy > 0 && grabDrag.open) { sheet.close(); swipedAt = Date.now(); grabDrag = null; }
+});
+el.sheetGrab.addEventListener('pointerup', () => { grabDrag = null; });
+el.sheetGrab.addEventListener('pointercancel', () => { grabDrag = null; });
+
+el.sheetGrab.addEventListener('click', () => {
+  if (Date.now() - swipedAt < 400) return;   // свайп уже всё сделал
+  sheet.toggle();
+});
 
 /** Шторка меняет высоту — сдвигаем камеру на половину прироста, чтобы
  *  содержимое ушло вверх, а не спряталось под панелью. Масштаб не трогаем:
@@ -240,8 +262,19 @@ el.sheetGrab.addEventListener('click', () => sheet.toggle());
 let reframeFrom = null;
 
 function withReframe(mutate) {
-  reframeFrom = el.sheet.getBoundingClientRect().top;
+  const wide = window.innerWidth > 1000;
+  const r0 = el.sheet.getBoundingClientRect();
   mutate();
+
+  if (!wide) { reframeFrom = r0.top; return; }
+
+  // На широком экране шторка — боковая панель, ширина меняется без анимации,
+  // поэтому мерить можно сразу, а сдвигать надо по горизонтали.
+  const d = r0.left - el.sheet.getBoundingClientRect().left;
+  sc.setViewBand(viewInsets());
+  if (Math.abs(d) < 2) return;
+  const v = sc.getTopView();
+  sc.setTopView(v.cx + (d / 2) / v.pxPerCm, v.cy);
 }
 
 el.sheet.addEventListener('transitionend', (e) => {
@@ -287,208 +320,18 @@ function showPanel(name) {
 
 const selected = () => state.scene.objects.find((o) => o.id === state.selectedId) || null;
 
-const A = {
-  edgeLength(i) {
-    const v = state.scene.room.vertices, n = v.length;
-    const a = v[i], b = v[(i + 1) % n];
-    return Math.hypot(b[0] - a[0], b[1] - a[1]);
-  },
-
-  setWallHeight(v) {
-    state.scene.room.wallHeight = v;
-    commit({ panel: false });
-  },
-
-  applyRect(l, w) {
-    const room = state.scene.room;
-    room.vertices = [[0, 0], [l, 0], [l, w], [0, w]];
-    // ворота ссылаются на индексы рёбер — оставляем только годные и подрезаем
-    room.gates = (room.gates || [])
-      .filter((g) => g.edgeIndex < 4)
-      .map((g) => {
-        const len = A.edgeLength(g.edgeIndex);
-        const width = Math.min(g.width, len);
-        return { ...g, width, offset: Math.min(g.offset, len - width) };
-      });
-    commit();
-    fitRoom();
-  },
-
-  setWallEdit(on) {
-    ui.wallEdit = on;
-    ui.badVertex = -1;
-    if (on) ui.gatePick = false;
-    renderZoomDependent();
-    renderPanel();
-  },
-
-  /** Двинуть вершину. false — так стены пересекутся, изменение не принято. */
-  setVertex(i, axis, value) {
-    const v = state.scene.room.vertices;
-    const next = v.map((p) => [...p]);
-    next[i][axis] = value;
-    if (!G.polygonIsSimple(next)) { toast(S.errSelfIntersect, 'warn'); return false; }
-    state.scene.room.vertices = next;
-    commit();
-    return true;
-  },
-
-  removeVertex(i) {
-    const v = state.scene.room.vertices;
-    if (v.length <= 3) { toast(S.errMinVertices, 'warn'); return; }
-    const next = v.filter((_, k) => k !== i);
-    if (!G.polygonIsSimple(next)) { toast(S.errSelfIntersect, 'warn'); return; }
-    const room = state.scene.room;
-    // рёбра после удалённой вершины сдвинулись — правим ссылки ворот
-    room.gates = (room.gates || [])
-      .filter((g) => g.edgeIndex !== i && g.edgeIndex !== (i - 1 + v.length) % v.length)
-      .map((g) => ({ ...g, edgeIndex: g.edgeIndex > i ? g.edgeIndex - 1 : g.edgeIndex }));
-    room.vertices = next;
-    commit();
-  },
-
-  insertVertex(edgeIndex) {
-    const room = state.scene.room;
-    const v = room.vertices, n = v.length;
-    const a = v[edgeIndex], b = v[(edgeIndex + 1) % n];
-    const mid = [G.snap((a[0] + b[0]) / 2, SNAP), G.snap((a[1] + b[1]) / 2, SNAP)];
-    room.vertices = [...v.slice(0, edgeIndex + 1), mid, ...v.slice(edgeIndex + 1)];
-    room.gates = (room.gates || [])
-      .filter((g) => g.edgeIndex !== edgeIndex)
-      .map((g) => ({ ...g, edgeIndex: g.edgeIndex > edgeIndex ? g.edgeIndex + 1 : g.edgeIndex }));
-    commit();
-  },
-
-  startGatePick() {
-    ui.gatePick = true;
-    ui.wallEdit = false;
-    renderZoomDependent();
-    renderPanel();
-    toast(S.gatePickWall);
-  },
-
-  addGateAt(edgeIndex, t) {
-    const len = A.edgeLength(edgeIndex);
-    const width = Math.min(300, Math.max(30, len));
-    const offset = Math.max(0, Math.min(len - width, t - width / 2));
-    state.scene.room.gates = [...(state.scene.room.gates || []), {
-      id: uid('g'), edgeIndex, offset: G.snap(offset, SNAP), width, label: S.gateDefaultLabel,
-    }];
-    ui.gatePick = false;
-    commit();
-  },
-
-  setGate(id, patch) {
-    state.scene.room.gates = state.scene.room.gates.map((g) => (g.id === id ? { ...g, ...patch } : g));
-    commit({ panel: false });
-  },
-
-  removeGate(id) {
-    state.scene.room.gates = state.scene.room.gates.filter((g) => g.id !== id);
-    commit();
-  },
-};
+const A = createRoomActions({
+  state, ui, commit, toast, uid, renderZoomDependent, renderPanel, fitRoom, snap: SNAP,
+});
 
 Object.assign(A, createObjectActions({ state, ui, commit, uid, select, viewCenter }));
 
-Object.assign(A, {
-  undo() { const s = history.undo(store.activeId); if (s) applyScene(s); },
-  redo() { const s = history.redo(store.activeId); if (s) applyScene(s); },
-
-  switchVariant(id) {
-    if (!store.variants.some((v) => v.id === id)) return;
-    store.activeId = id;
-    state.scene = activeVariant().scene;
-    history.ensure(id, state.scene);
-    select(null);
-    ui.wallEdit = false; ui.gatePick = false; ui.badVertex = -1;
-    el.variantName.textContent = state.scene.name;
-    storage.save(store);
-    updateUndoButtons();
-    renderScene();
-    renderPanel();
-    fitRoom();
-  },
-
-  newVariant() {
-    const scene = defaultScene();
-    scene.name = nextVariantName();
-    const id = uid('v');
-    store.variants = [...store.variants, { id, scene }];
-    history.reset(id, scene);
-    A.switchVariant(id);
-  },
-
-  duplicateVariant() {
-    const scene = JSON.parse(JSON.stringify(state.scene));
-    scene.name = `${state.scene.name} (${S.copySuffix})`;
-    const id = uid('v');
-    store.variants = [...store.variants, { id, scene }];
-    history.reset(id, scene);
-    A.switchVariant(id);
-  },
-
-  renameVariant(id, name) {
-    const v = store.variants.find((x) => x.id === id);
-    if (!v) return;
-    const next = (name || '').trim();
-    if (next) v.scene.name = next;
-    if (id === store.activeId) el.variantName.textContent = v.scene.name;
-    storage.save(store);
-    renderPanel();
-  },
-
-  deleteVariant() {
-    if (store.variants.length <= 1) return;
-    const gone = store.activeId;
-    store.variants = store.variants.filter((v) => v.id !== gone);
-    history.drop(gone);
-    A.switchVariant(store.variants[0].id);
-  },
-
-  getStore() { return store; },
-
-  async exportScene() {
-    const r = await IO.exportScene(state.scene);
-    if (r === 'shared') toast(S.okShared);
-    else if (r === 'downloaded') toast(S.okSaved);
-  },
-
-  async copyJson() {
-    const ok = await IO.copyJson(state.scene);
-    toast(ok ? S.okCopied : S.errCopy, ok ? '' : 'warn');
-  },
-
-  async screenshot() {
-    const r = await IO.exportShot(sc, state.scene, viewInsets());
-    if (r === 'shared') toast(S.okShared);
-    else if (r === 'downloaded') toast(S.okSaved);
-  },
-
-  /** Импорт создаёт новый вариант и не трогает текущий. */
-  importText(text) {
-    const r = IO.parseScene(text);
-    if (!r.ok) {
-      toast(r.error === 'version' ? S.errImportVersion(r.version) : S.errImportShape, 'err');
-      return false;
-    }
-    const id = uid('v');
-    store.variants = [...store.variants, { id, scene: r.scene }];
-    history.reset(id, r.scene);
-    A.switchVariant(id);
-    toast(S.okImported);
-    return true;
-  },
-
-  resetAll() {
-    storage.clear();
-    const scene = defaultScene();
-    const id = uid('v');
-    store.variants = [{ id, scene }];
-    history.reset(id, scene);
-    A.switchVariant(id);
-  },
-});
+Object.assign(A, createShellActions({
+  state, ui, store, history, storage, sc, uid, defaultScene, select, toast,
+  commit, applyScene, renderScene, renderPanel, fitRoom, viewInsets,
+  activeVariant, nextVariantName, updateUndoButtons,
+  setVariantName: (n) => { el.variantName.textContent = n; },
+}));
 
 // ---- жесты -------------------------------------------------------------
 

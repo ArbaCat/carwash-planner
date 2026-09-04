@@ -35,7 +35,13 @@ html, body {
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
+  /* На драге палец не должен выделять подписи и вызывать iOS-коллаут */
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
 }
+
+/* поля ввода — исключение: там выделять нужно */
+input, textarea { -webkit-user-select: text; user-select: text; }
 
 /* ---------- сцена ---------- */
 
@@ -89,8 +95,29 @@ html, body {
   border-bottom: 1px solid var(--line);
 }
 
-.tb-spacer { flex: 1 1 auto; }
 .tb-group { display: flex; gap: 4px; }
+
+/* Телефон не целевой, но на 375 px кнопка 3D просто уезжала за экран.
+   Кнопки не сжимаются, распорка сжимается, тулбар при нужде прокручивается —
+   так дотянуться можно до всего. */
+#toolbar > * { flex: 0 0 auto; }
+#toolbar .tb-spacer { flex: 1 1 auto; min-width: 0; }
+
+@media (max-width: 560px) {
+  #toolbar {
+    overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  #toolbar::-webkit-scrollbar { display: none; }
+  .seg-btn { min-width: 56px; padding: 0 8px; }
+  .tb-btn { padding: 0 10px; }
+  #variant-name {
+    display: inline-block; max-width: 72px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    vertical-align: middle;
+  }
+}
 
 .tb-btn {
   min-width: var(--tap); min-height: var(--tap);
@@ -159,6 +186,7 @@ html, body {
 #sheet-body {
   flex: 1 1 auto;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding: 0 14px 16px;
 }
@@ -220,8 +248,10 @@ html, body {
 
 .hint { margin: 8px 0; color: var(--fg-dim); font-size: 13px; }
 
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+/* minmax(0, 1fr), а не 1fr: иначе колонка не сжимается меньше содержимого
+   и сетка вылезает за боковую панель в 360 px */
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 
 /* поля */
 .fld { display: block; margin-bottom: 10px; }
@@ -309,15 +339,18 @@ input.num:focus, input.txt:focus { outline: 2px solid var(--accent); outline-off
 /* сама кнопка визуально 52x32, но зона нажатия — 44 по высоте */
 .tgl::after { content: ''; position: absolute; inset: -6px -0px; }
 
-/* таблица вершин */
-.vtab { width: 100%; border-collapse: collapse; }
+/* таблица вершин.
+   table-layout: fixed обязателен: без него поля не сжимаются и таблица
+   вылезает за боковую панель в 360 px. */
+.vtab { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .vtab th {
   padding: 0 4px 6px; text-align: left;
   font-size: 12px; font-weight: 600; color: var(--fg-dim);
 }
 .vtab td { padding: 3px 4px 3px 0; }
-.vtab .vno { width: 26px; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
-input.num-cell { min-height: var(--tap); }
+.vtab .vno { width: 24px; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+.vtab th:last-child, .vtab td:last-child { width: var(--tap); }
+input.num-cell { width: 100%; min-width: 0; min-height: var(--tap); padding: 0 4px; }
 
 /* карточка (ворота, объекты каталога) */
 .card {
