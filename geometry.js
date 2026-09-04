@@ -150,13 +150,24 @@ export function obbOverlap(a, b) {
   return true;
 }
 
-/** Точка строго внутри подошвы объекта (без границы). */
-function pointInObbStrict(p, obj) {
+/** Точка в локальной системе объекта. */
+function toLocal(p, obj) {
   const [ax, ay] = obbAxes(obj);
   const dx = p[0] - obj.x, dy = p[1] - obj.y;
-  const lx = dx * ax[0] + dy * ax[1];
-  const ly = dx * ay[0] + dy * ay[1];
+  return [dx * ax[0] + dy * ax[1], dx * ay[0] + dy * ay[1]];
+}
+
+/** Точка строго внутри подошвы объекта (без границы). */
+function pointInObbStrict(p, obj) {
+  const [lx, ly] = toLocal(p, obj);
   return Math.abs(lx) < obj.l / 2 - EPS && Math.abs(ly) < obj.w / 2 - EPS;
+}
+
+/** Точка в подошве объекта, граница включена. pad в сантиметрах расширяет
+ *  зону попадания — иначе в мелкий пылесос пальцем не попасть. */
+export function pointInObb(p, obj, pad = 0) {
+  const [lx, ly] = toLocal(p, obj);
+  return Math.abs(lx) <= obj.l / 2 + pad + EPS && Math.abs(ly) <= obj.w / 2 + pad + EPS;
 }
 
 /** Подошва целиком внутри комнаты.

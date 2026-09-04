@@ -281,3 +281,31 @@ test('nearestEdge: за концом ребра мерит до вершины',
   near(r.dist, 50);          // до угла (0,0)
   near(r.t, 0);
 });
+
+// --------------------------------------------------------- pointInObb
+
+test('pointInObb: точка внутри и снаружи подошвы', () => {
+  const o = { x: 100, y: 50, l: 200, w: 100, rot: 0 };
+  assert.equal(G.pointInObb([100, 50], o), true,  'центр');
+  assert.equal(G.pointInObb([199, 99], o), true,  'у угла изнутри');
+  assert.equal(G.pointInObb([201, 50], o), false, 'сразу за бортом');
+  assert.equal(G.pointInObb([100, 101], o), false);
+});
+
+test('pointInObb: граница считается попаданием', () => {
+  const o = { x: 0, y: 0, l: 100, w: 100, rot: 0 };
+  assert.equal(G.pointInObb([50, 0], o), true);
+  assert.equal(G.pointInObb([50, 50], o), true, 'угол');
+});
+
+test('pointInObb: учитывает поворот, а не габаритную коробку', () => {
+  const o = { x: 0, y: 0, l: 400, w: 20, rot: 45 };
+  assert.equal(G.pointInObb([100, 100], o), true,  'на диагонали — внутри полосы');
+  assert.equal(G.pointInObb([100, -100], o), false, 'в углу габаритной коробки — снаружи');
+});
+
+test('pointInObb: припуск расширяет попадание для мелких объектов', () => {
+  const o = { x: 0, y: 0, l: 60, w: 60, rot: 0 };
+  assert.equal(G.pointInObb([45, 0], o), false, 'без припуска мимо');
+  assert.equal(G.pointInObb([45, 0], o, 20), true, 'с припуском 20 см — попадание');
+});

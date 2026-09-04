@@ -2,7 +2,8 @@
 // Здесь нет состояния: панели получают сцену и объект действий (A) и только
 // рисуют DOM. Всё, что меняет данные, живёт в app.js.
 
-import { S, fmtCm } from './strings.js';
+import { S, fmtCm, fmtSize } from './strings.js';
+import { CATALOG, GROUPS, PALETTE, iconSvg } from './catalog.js';
 
 /** Микро-гиперскрипт: h('div', {class:'x'}, 'текст', h('b', null, '!')) */
 export function h(tag, props, ...kids) {
@@ -211,6 +212,95 @@ export function renderRoomPanel(scene, A, ui) {
     ? hint(S.gatePickWall)
     : btn('+ ' + S.addGate, { wide: true, onClick: () => A.startGatePick() }));
   wrap.append(section(S.gates, gates));
+
+  return wrap;
+}
+
+/** Панель «+ Добавить»: карточки каталога по группам. */
+export function renderAddPanel(A) {
+  const wrap = h('div', null, h('h2', { text: S.catalogTitle }));
+
+  for (const g of GROUPS) {
+    const items = CATALOG.filter((c) => c.group === g.key);
+    if (!items.length) continue;
+    const grid = h('div', { class: 'cat-grid' });
+    for (const c of items) {
+      const card = h('button', { class: 'cat-card', type: 'button', onclick: () => A.addObject(c.key) },
+        h('span', { class: 'cat-ico' }),
+        h('span', { class: 'cat-name', text: c.name }),
+        h('span', { class: 'cat-dim', text: `${c.l}×${c.w}×${c.h}` }),
+        c.note ? h('span', { class: 'cat-note', text: c.note }) : null,
+      );
+      card.querySelector('.cat-ico').innerHTML = iconSvg(c);
+      grid.append(card);
+    }
+    wrap.append(section(g.title, grid));
+  }
+  return wrap;
+}
+
+/** Панель свойств выбранного объекта. */
+export function renderPropsPanel(obj, A) {
+  if (!obj) return h('div', null, h('h2', { text: S.propsTitle }), hint(S.nothingSelected));
+
+  const wrap = h('div', null, h('h2', { text: obj.name || S.propsTitle }));
+
+  wrap.append(section(null,
+    textField({ label: S.name, value: obj.name, onChange: (v) => A.patch(obj.id, { name: v }) }),
+  ));
+
+  wrap.append(section(null,
+    numField({ label: S.dimL, value: obj.l, step: 5, min: 5, onChange: (v) => A.patch(obj.id, { l: v }) }),
+    numField({ label: S.dimW, value: obj.w, step: 5, min: 5, onChange: (v) => A.patch(obj.id, { w: v }) }),
+    numField({ label: S.dimH, value: obj.h, step: 5, min: 5, onChange: (v) => A.patch(obj.id, { h: v }) }),
+  ));
+
+  wrap.append(section(S.rotation,
+    h('div', { class: 'row' },
+      btn('↺ 90°', { onClick: () => A.rotate(obj.id, 90) }),
+      h('span', { class: 'rot-val', text: `${((obj.rot % 360) + 360) % 360}°` }),
+      btn('90° ↻', { onClick: () => A.rotate(obj.id, -90) }),
+    ),
+  ));
+
+  const sw = h('div', { class: 'swatches' });
+  for (const col of PALETTE) {
+    const b = h('button', {
+      class: 'swatch' + (col.toLowerCase() === (obj.color || '').toLowerCase() ? ' is-on' : ''),
+      type: 'button', 'aria-label': `Цвет ${col}`,
+      onclick: () => A.patch(obj.id, { color: col }),
+    });
+    b.style.setProperty('--sw', col);
+    sw.append(b);
+  }
+  wrap.append(section(S.color, sw));
+
+  wrap.append(section(null,
+    toggleRow({
+      label: S.translucent, on: (obj.opacity ?? 1) < 1,
+      onChange: (v) => A.patch(obj.id, { opacity: v ? 0.4 : 1 }),
+    }),
+  ));
+
+  const cl = obj.clearance || { on: false, margin: 80 };
+  wrap.append(section(null,
+    toggleRow({
+      label: S.clearance, on: !!cl.on,
+      onChange: (v) => A.patch(obj.id, { clearance: { ...cl, on: v } }),
+    }),
+    cl.on
+      ? numField({
+          label: S.clearanceMargin, value: cl.margin, step: 10, min: 0, max: 300,
+          onChange: (v) => A.patch(obj.id, { clearance: { ...cl, margin: v } }),
+        })
+      : null,
+  ));
+
+  wrap.append(section(null,
+    btn(S.duplicate, { wide: true, onClick: () => A.duplicate(obj.id) }),
+    btn(S.resetSize, { wide: true, onClick: () => A.resetSize(obj.id) }),
+    confirmBtn(S.del, { onConfirm: () => A.remove(obj.id) }),
+  ));
 
   return wrap;
 }

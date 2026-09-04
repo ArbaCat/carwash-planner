@@ -106,6 +106,11 @@ export function fmtCm(v) {
   return `${n} ${S.cm} · ${m.replace('.', ',')} ${S.m}`;
 }
 
+// короткое «120 см» — для размерных линий, где длинная форма не влезает
+export function fmtCmPlain(v) {
+  return `${Math.round(v)} ${S.cm}`;
+}
+
 // короткая форма для подписей на плане: «460×180»
 export function fmtSize(l, w) {
   return `${Math.round(l)}×${Math.round(w)}`;

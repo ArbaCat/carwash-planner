@@ -1,9 +1,15 @@
 // Оркестрация: состояние, жесты, интерфейс.
 // Математика — geometry.js, рендер — scene3d.js, панели — ui.js, тексты — strings.js.
 
-import { createScene, buildRoom, buildWallOutline, buildEditHandles } from './scene3d.js';
+import { createScene } from './scene3d.js';
+import {
+  buildRoom, buildWallOutline, buildEditHandles,
+  buildObjects, moveObjectMesh, buildObjectOverlay, buildDimLines, rotateHandlePos,
+} from './meshes.js';
+import { createObjectActions, computeFlags } from './objects.js';
+import { createGestures } from './gestures.js';
 import * as G from './geometry.js';
-import { S } from './strings.js';
+import { S, fmtSize, fmtCmPlain } from './strings.js';
 import * as UI from './ui.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -65,7 +71,7 @@ function defaultScene() {
   };
 }
 
-const state = { scene: defaultScene(), selectedId: null };
+const state = { scene: defaultScene(), selectedId: null, flags: new Map() };
 const ui = { panel: 'hint', wallEdit: false, gatePick: false, rectDraft: null, badVertex: -1 };
 
 const uid = (p) => p + Math.random().toString(36).slice(2, 8);
@@ -113,6 +119,7 @@ function fitRoom() {
 function renderZoomDependent() {
   const ppc = sc.getTopView().pxPerCm;
   buildWallOutline(sc, state.scene.room, ppc);
+  buildObjectOverlay(sc, state.scene, { selectedId: state.selectedId, flags: state.flags, pxPerCm: ppc });
   if (ui.wallEdit && sc.getMode() === 'top') {
     buildEditHandles(sc, state.scene.room, ppc, { badIndex: ui.badVertex });
   } else {
@@ -121,12 +128,45 @@ function renderZoomDependent() {
   }
 }
 
+/** Подпись объекта: имя и Д×Ш. У мелких — только имя, иначе не читается.
+ *  Собирается из узлов DOM, а не из innerHTML: имя вводит пользователь. */
+function labelFor(o) {
+  const small = Math.min(o.l, o.w) < 60;
+  // Мелкий объект подпись накрывает целиком, поэтому у него она уезжает
+  // выше — сдвигом в экранных координатах, а не в локальных: локальные
+  // повернулись бы вместе с объектом.
+  const cls = ['lbl'];
+  if (state.flags.get(o.id) !== 'ok') cls.push('is-dim');
+  if (small) cls.push('is-above');
+  const node = UI.h('div', { class: cls.join(' ') }, o.name || '');
+  if (!small) node.append(UI.h('small', { text: fmtSize(o.l, o.w) }));
+  return node;
+}
+
 function renderScene() {
   const room = state.scene.room;
   const b = G.polygonBounds(room.vertices);
   sc.buildGrid(b.minX, b.minY, b.maxX, b.maxY);
   buildRoom(sc, room);
+  state.flags = computeFlags(state.scene.objects, room.vertices);
+  buildObjects(sc, state.scene, state.flags, labelFor);
   renderZoomDependent();
+}
+
+/** Центр свободной части кадра в координатах комнаты — сюда падают новые объекты. */
+function viewCenter() {
+  const { w, h } = sc.getSize();
+  const ins = viewInsets();
+  return sc.screenToRoom(
+    ins.left + (w - ins.left - ins.right) / 2,
+    ins.top + (h - ins.top - ins.bottom) / 2,
+  );
+}
+
+function select(id) {
+  state.selectedId = id;
+  if (id) ui.panel = 'props';
+  else if (ui.panel === 'props') ui.panel = 'hint';
 }
 
 /** Единая точка после любого изменения данных. Автосейв и undo сядут сюда. */
@@ -182,9 +222,12 @@ function renderPanel() {
   UI.clear(el.sheetBody);
   let node;
   if (ui.panel === 'room') node = UI.renderRoomPanel(state.scene, A, ui);
+  else if (ui.panel === 'add') node = UI.renderAddPanel(A);
+  else if (ui.panel === 'props') node = UI.renderPropsPanel(selected(), A);
   else node = UI.renderHintPanel();
   el.sheetBody.appendChild(node);
   el.btnRoom.classList.toggle('is-on', ui.panel === 'room');
+  el.btnAdd.classList.toggle('is-on', ui.panel === 'add');
 }
 
 function showPanel(name) {
@@ -194,6 +237,8 @@ function showPanel(name) {
 }
 
 // ---- действия над комнатой ---------------------------------------------
+
+const selected = () => state.scene.objects.find((o) => o.id === state.selectedId) || null;
 
 const A = {
   edgeLength(i) {
@@ -297,234 +342,15 @@ const A = {
   },
 };
 
-// ---- жесты вида сверху -------------------------------------------------
+Object.assign(A, createObjectActions({ state, ui, commit, uid, select, viewCenter }));
 
-const cv = sc.renderer.domElement;
-const DRAG_PX = 6, HIT_PX = 24, LONG_MS = 600;
+// ---- жесты -------------------------------------------------------------
 
-const ptrs = new Map();
-let gest = null;
-let longTimer = 0;
-let spaceDown = false;
-
-const localPt = (e) => {
-  const r = cv.getBoundingClientRect();
-  return { x: e.clientX - r.left, y: e.clientY - r.top };
-};
-const roomAt = (p) => sc.screenToRoom(p.x, p.y);
-const hitCm = () => HIT_PX / sc.getTopView().pxPerCm;
-
-function hitVertex(rp) {
-  const v = state.scene.room.vertices;
-  const r = hitCm();
-  let best = -1, bd = Infinity;
-  v.forEach(([x, y], i) => {
-    const d = Math.hypot(rp.x - x, rp.y - y);
-    if (d <= r && d < bd) { bd = d; best = i; }
-  });
-  return best;
-}
-
-function hitEdgeMid(rp) {
-  const v = state.scene.room.vertices, n = v.length;
-  const r = hitCm();
-  for (let i = 0; i < n; i++) {
-    const a = v[i], b = v[(i + 1) % n];
-    const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-    if (Math.hypot(rp.x - m[0], rp.y - m[1]) <= r) return i;
-  }
-  return -1;
-}
-
-function beginPan(p) {
-  gest = { kind: 'pan', id: gest?.id ?? -1, start: p, anchor: roomAt(p) };
-}
-
-function applyPan(p) {
-  const { pxPerCm } = sc.getTopView();
-  const { w, h } = sc.getSize();
-  sc.setTopView(gest.anchor.x - (p.x - w / 2) / pxPerCm,
-                gest.anchor.y + (p.y - h / 2) / pxPerCm);
-}
-
-function startPinch() {
-  const [a, b] = [...ptrs.values()];
-  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  clearTimeout(longTimer);
-  gest = {
-    kind: 'pinch',
-    startDist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
-    startPpc: sc.getTopView().pxPerCm,
-    anchor: roomAt(mid),
-  };
-}
-
-function applyPinch() {
-  const pts = [...ptrs.values()];
-  if (pts.length < 2) return;
-  const [a, b] = pts;
-  const lim = zoomLimits();
-  const dist = Math.hypot(a.x - b.x, a.y - b.y);
-  const ppc = Math.min(lim.max, Math.max(lim.min, gest.startPpc * dist / gest.startDist));
-  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  const { w, h } = sc.getSize();
-  sc.setTopView(gest.anchor.x - (mid.x - w / 2) / ppc,
-                gest.anchor.y + (mid.y - h / 2) / ppc, ppc);
-  renderZoomDependent();
-}
-
-function onDown(e) {
-  if (sc.getMode() !== 'top') return;
-  cv.setPointerCapture?.(e.pointerId);
-  const p = localPt(e);
-  ptrs.set(e.pointerId, p);
-
-  if (ptrs.size === 2) { startPinch(); return; }
-  if (ptrs.size > 2) return;
-
-  // мышь: ПКМ или пробел — сразу пан
-  if (e.pointerType === 'mouse' && (e.button === 2 || spaceDown)) {
-    gest = { kind: 'pan', id: e.pointerId, start: p, anchor: roomAt(p) };
-    return;
-  }
-
-  const rp = roomAt(p);
-
-  if (ui.wallEdit) {
-    const vi = hitVertex(rp);
-    if (vi >= 0) {
-      const v = state.scene.room.vertices;
-      gest = { kind: 'vertex', id: e.pointerId, start: p, index: vi, origin: [...v[vi]], moved: false, armed: false };
-      // Долгий тап не удаляет сразу, а взводит удаление: вершина краснеет,
-      // сдвиг пальца отменяет. Иначе неуверенный драг (нажал, подумал, повёл)
-      // молча съедает вершину, а это необратимое действие.
-      longTimer = setTimeout(() => {
-        if (gest?.kind !== 'vertex' || gest.moved) return;
-        gest.armed = true;
-        ui.badVertex = gest.index;
-        renderZoomDependent();
-        toast(S.releaseToDelete, 'warn');
-      }, LONG_MS);
-      return;
-    }
-    const mi = hitEdgeMid(rp);
-    if (mi >= 0) { gest = { kind: 'addvertex', id: e.pointerId, start: p, edge: mi }; return; }
-  }
-
-  gest = { kind: 'maybe', id: e.pointerId, start: p };
-}
-
-function onMove(e) {
-  if (!ptrs.has(e.pointerId)) return;
-  const p = localPt(e);
-  ptrs.set(e.pointerId, p);
-
-  if (gest?.kind === 'pinch') { applyPinch(); return; }
-  if (!gest || gest.id !== e.pointerId) return;
-
-  const moved = Math.hypot(p.x - gest.start.x, p.y - gest.start.y);
-
-  if (gest.kind === 'maybe') {
-    if (moved < DRAG_PX) return;
-    beginPan(gest.start);
-    gest.id = e.pointerId;
-  }
-
-  if (gest.kind === 'pan') { applyPan(p); return; }
-
-  if (gest.kind === 'vertex') {
-    if (moved > DRAG_PX) {
-      gest.moved = true;
-      clearTimeout(longTimer);
-      if (gest.armed) { gest.armed = false; ui.badVertex = -1; }
-    }
-    if (!gest.moved) return;
-    const rp = roomAt(p);
-    const v = state.scene.room.vertices;
-    const next = v.map((q) => [...q]);
-    next[gest.index] = [G.snap(rp.x, SNAP), G.snap(rp.y, SNAP)];
-    const ok = G.polygonIsSimple(next);
-    state.scene.room.vertices = next;
-    ui.badVertex = ok ? -1 : gest.index;
-    renderScene();
-    return;
-  }
-
-  if (gest.kind === 'addvertex' && moved > DRAG_PX) { gest = null; }
-}
-
-function onUp(e) {
-  const p = ptrs.get(e.pointerId) || localPt(e);
-  ptrs.delete(e.pointerId);
-  clearTimeout(longTimer);
-
-  if (gest?.kind === 'pinch') { if (ptrs.size < 2) gest = null; return; }
-  if (!gest || gest.id !== e.pointerId) { if (!ptrs.size) gest = null; return; }
-
-  const kind = gest.kind;
-
-  if (kind === 'vertex') {
-    if (gest.armed) {
-      const i = gest.index;
-      gest = null; ui.badVertex = -1;
-      A.removeVertex(i);
-      return;
-    }
-    if (gest.moved && ui.badVertex === gest.index) {
-      // отпустили там, где стены пересекаются — возвращаем как было
-      const v = state.scene.room.vertices.map((q) => [...q]);
-      v[gest.index] = gest.origin;
-      state.scene.room.vertices = v;
-      toast(S.errSelfIntersect, 'warn');
-    }
-    ui.badVertex = -1;
-    gest = null;
-    commit();
-    return;
-  }
-
-  if (kind === 'addvertex') { const i = gest.edge; gest = null; A.insertVertex(i); return; }
-
-  if (kind === 'maybe') {
-    gest = null;
-    onTap(roomAt(p));
-    return;
-  }
-
-  gest = null;
-}
-
-function onTap(rp) {
-  if (ui.gatePick) {
-    const e = G.nearestEdge([rp.x, rp.y], state.scene.room.vertices);
-    if (e) A.addGateAt(e.index, e.t);
-    return;
-  }
-  // выбор объектов — шаг 4
-}
-
-function onWheel(e) {
-  if (sc.getMode() !== 'top') return;
-  e.preventDefault();
-  const p = localPt(e);
-  const lim = zoomLimits();
-  const anchor = roomAt(p);
-  const ppc = Math.min(lim.max, Math.max(lim.min,
-    sc.getTopView().pxPerCm * Math.exp(-e.deltaY * 0.0015)));
-  const { w, h } = sc.getSize();
-  sc.setTopView(anchor.x - (p.x - w / 2) / ppc, anchor.y + (p.y - h / 2) / ppc, ppc);
-  renderZoomDependent();
-}
-
-cv.addEventListener('pointerdown', onDown);
-cv.addEventListener('pointermove', onMove);
-cv.addEventListener('pointerup', onUp);
-cv.addEventListener('pointercancel', onUp);
-cv.addEventListener('wheel', onWheel, { passive: false });
-cv.addEventListener('contextmenu', (e) => e.preventDefault());
-
-window.addEventListener('keydown', (e) => { if (e.code === 'Space') spaceDown = true; });
-window.addEventListener('keyup', (e) => { if (e.code === 'Space') spaceDown = false; });
+const gestures = createGestures({
+  sc, state, ui, A, toast, commit,
+  renderScene, renderZoomDependent, zoomLimits, select, renderPanel,
+});
+gestures.attach(sc.renderer.domElement);
 
 // ---- вид ---------------------------------------------------------------
 
@@ -560,6 +386,7 @@ function boot() {
   el.btnTop.addEventListener('click', () => setView('top'));
   el.btn3d.addEventListener('click', () => setView('3d'));
   el.btnRoom.addEventListener('click', () => showPanel(ui.panel === 'room' ? 'hint' : 'room'));
+  el.btnAdd.addEventListener('click', () => showPanel(ui.panel === 'add' ? 'hint' : 'add'));
 
   renderScene();
   // сначала шторка, потом вписывание: fitRoom считает свободную часть кадра
@@ -570,4 +397,4 @@ function boot() {
 boot();
 
 // временный крючок для отладки
-window.__cw = { sc, state, ui, A };
+window.__cw = { sc, state, ui, A, commit, renderScene, fitRoom };
