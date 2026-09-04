@@ -95,9 +95,17 @@ export function createObjectActions(ctx) {
       if (!proto) return;
       const [x, y] = freeSpot(state.scene.objects, state.scene.room.vertices, proto, c.x, c.y);
       const o = { ...proto, id: uid('o'), x, y };
+      const fromCatalog = ui.panel === 'add';
       state.scene.objects = [...state.scene.objects, o];
       select(o.id);
-      commit();
+      // Каталог остаётся открытым: расставить бус, две легковые, пылесос и
+      // стеллаж — это пять тапов, а не пять открытий панели. Объект при этом
+      // всё равно выбран, ручка поворота и габариты под рукой.
+      // Панель не перерисовываем: каталог от сцены не зависит, а пересборка
+      // сбрасывала бы прокрутку — добавил бус, доскроллил до стеллажа, и
+      // список прыгнул обратно наверх.
+      if (fromCatalog) ui.panel = 'add';
+      commit({ panel: !fromCatalog });
     },
 
     patch(id, fields) {
