@@ -342,15 +342,33 @@ export function popover(anchor, content) {
 export function closePopover() { if (openPop) openPop(); }
 
 export function menuList(items) {
-  return h('div', { class: 'menu' }, items.filter(Boolean).map((it) => (
-    it.sep
-      ? h('div', { class: 'menu-sep' })
-      : h('button', {
-          class: 'menu-item' + (it.danger ? ' is-danger' : ''), type: 'button',
-          ...(it.disabled ? { disabled: true } : {}),
-          onclick: () => { if (!it.keepOpen) closePopover(); it.onClick?.(); },
-        }, it.label)
-  )));
+  return h('div', { class: 'menu' }, items.filter(Boolean).map((it) => {
+    if (it.sep) return h('div', { class: 'menu-sep' });
+
+    const b = h('button', {
+      class: 'menu-item' + (it.danger ? ' is-danger' : ''), type: 'button',
+      ...(it.disabled ? { disabled: true } : {}),
+    }, it.label);
+
+    // Опасный пункт спрашивает «Точно?» прямо в себе: блокирующих модалок
+    // в приложении нет, а confirm() на iPad — как раз она.
+    let armed = false, timer = 0;
+    b.addEventListener('click', () => {
+      if (it.confirm && !armed) {
+        armed = true;
+        b.textContent = S.confirmShort;
+        b.classList.add('is-armed');
+        timer = setTimeout(() => {
+          armed = false; b.textContent = it.label; b.classList.remove('is-armed');
+        }, 3000);
+        return;
+      }
+      clearTimeout(timer);
+      if (!it.keepOpen) closePopover();
+      it.onClick?.();
+    });
+    return b;
+  }));
 }
 
 /** Меню вариантов: переключение, переименование по тапу, создание, удаление. */
@@ -392,6 +410,28 @@ export function variantsMenu(store, A) {
   const del = confirmBtn(S.delVariant, { onConfirm: () => { closePopover(); A.deleteVariant(); } });
   if (store.variants.length <= 1) del.disabled = true;
   wrap.append(h('div', { class: 'menu-pad' }, del));
+
+  return wrap;
+}
+
+/** Панель импорта: файл или вставленный текст. Textarea живёт в шторке,
+ *  а не в выпадашке — на iPad клавиатура выпадашку сдвинула бы за экран. */
+export function renderImportPanel(A) {
+  const wrap = h('div', null, h('h2', { text: S.importTitle }), hint(S.importHint));
+
+  const file = h('input', { type: 'file', accept: '.json,application/json', class: 'file-in' });
+  file.addEventListener('change', async () => {
+    const f = file.files?.[0];
+    if (!f) return;
+    A.importText(await f.text());
+  });
+  wrap.append(section(null, h('label', { class: 'btn btn-primary btn-wide file-lbl' }, S.importPickFile, file)));
+
+  const ta = h('textarea', { class: 'txt ta', rows: '6', placeholder: S.pasteJsonHere });
+  wrap.append(section(null, ta, btn(S.importBtn, {
+    wide: true,
+    onClick: () => { if (ta.value.trim() && A.importText(ta.value)) ta.value = ''; },
+  })));
 
   return wrap;
 }

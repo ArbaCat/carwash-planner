@@ -399,6 +399,7 @@ input.num-cell { min-height: var(--tap); }
 .menu-item:active:not(:disabled) { background: rgba(255,255,255,.09); }
 .menu-item:disabled { opacity: .38; cursor: default; }
 .menu-item.is-danger { color: #ffb3b1; }
+.menu-item.is-armed { background: var(--danger); color: #fff; }
 .menu-sep { height: 1px; margin: 6px 4px; background: var(--line); }
 .menu-pad { padding: 0 4px 4px; }
 
@@ -417,3 +418,14 @@ input.num-cell { min-height: var(--tap); }
 .vname:active { background: rgba(255,255,255,.09); }
 .vmark { flex: 0 0 auto; padding-right: 10px; color: var(--accent); font-weight: 700; }
 input.vedit { margin: 0 4px; }
+
+/* импорт */
+.file-lbl { position: relative; overflow: hidden; text-align: center; line-height: var(--tap); }
+.file-in { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+textarea.ta {
+  display: block; width: 100%;
+  min-height: 132px; padding: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; line-height: 1.4;
+  resize: vertical;
+}

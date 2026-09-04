@@ -9,6 +9,7 @@ import {
 import { createObjectActions, computeFlags } from './objects.js';
 import { createGestures } from './gestures.js';
 import { createStorage, createHistory } from './storage.js';
+import * as IO from './io.js';
 import * as G from './geometry.js';
 import { S, fmtSize, fmtCmPlain } from './strings.js';
 import * as UI from './ui.js';
@@ -269,6 +270,7 @@ function renderPanel() {
   if (ui.panel === 'room') node = UI.renderRoomPanel(state.scene, A, ui);
   else if (ui.panel === 'add') node = UI.renderAddPanel(A);
   else if (ui.panel === 'props') node = UI.renderPropsPanel(selected(), A);
+  else if (ui.panel === 'import') node = UI.renderImportPanel(A);
   else node = UI.renderHintPanel();
   el.sheetBody.appendChild(node);
   el.btnRoom.classList.toggle('is-on', ui.panel === 'room');
@@ -445,6 +447,47 @@ Object.assign(A, {
   },
 
   getStore() { return store; },
+
+  async exportScene() {
+    const r = await IO.exportScene(state.scene);
+    if (r === 'shared') toast(S.okShared);
+    else if (r === 'downloaded') toast(S.okSaved);
+  },
+
+  async copyJson() {
+    const ok = await IO.copyJson(state.scene);
+    toast(ok ? S.okCopied : S.errCopy, ok ? '' : 'warn');
+  },
+
+  async screenshot() {
+    const r = await IO.exportShot(sc, state.scene, viewInsets());
+    if (r === 'shared') toast(S.okShared);
+    else if (r === 'downloaded') toast(S.okSaved);
+  },
+
+  /** Импорт создаёт новый вариант и не трогает текущий. */
+  importText(text) {
+    const r = IO.parseScene(text);
+    if (!r.ok) {
+      toast(r.error === 'version' ? S.errImportVersion(r.version) : S.errImportShape, 'err');
+      return false;
+    }
+    const id = uid('v');
+    store.variants = [...store.variants, { id, scene: r.scene }];
+    history.reset(id, r.scene);
+    A.switchVariant(id);
+    toast(S.okImported);
+    return true;
+  },
+
+  resetAll() {
+    storage.clear();
+    const scene = defaultScene();
+    const id = uid('v');
+    store.variants = [{ id, scene }];
+    history.reset(id, scene);
+    A.switchVariant(id);
+  },
 });
 
 // ---- жесты -------------------------------------------------------------
@@ -509,6 +552,15 @@ function boot() {
   el.btnUndo.addEventListener('click', () => A.undo());
   el.btnRedo.addEventListener('click', () => A.redo());
   el.btnVariants.addEventListener('click', () => UI.popover(el.btnVariants, UI.variantsMenu(store, A)));
+  el.btnMore.addEventListener('click', () => UI.popover(el.btnMore, UI.menuList([
+    { label: S.exportJson, onClick: () => A.exportScene() },
+    { label: S.copyJson, onClick: () => A.copyJson() },
+    { label: S.importJson, onClick: () => showPanel('import') },
+    { sep: true },
+    { label: S.screenshot, onClick: () => A.screenshot() },
+    { sep: true },
+    { label: S.reset, danger: true, confirm: true, onClick: () => A.resetAll() },
+  ])));
 
   renderScene();
   // сначала шторка, потом вписывание: fitRoom считает свободную часть кадра
